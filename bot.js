@@ -4,71 +4,93 @@ const schedule = require('node-schedule');
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const bot = new Telegraf(BOT_TOKEN);
 
-// ─── Стан користувачів ───
+// ════════════════════════════════════════
+//  СТАН КОРИСТУВАЧІВ
+// ════════════════════════════════════════
 const users = {};
-// { chatId: { startDate, day, checked, meals: { breakfast, lunch, dinner }, jobs: [], setupStep } }
+// {
+//   chatId: {
+//     startDate, day, checked,
+//     reminders: [ { id, med, h, m, job } ],
+//     setupStep: null | 'pick_med' | 'pick_count' | 'pick_time_N',
+//     setupTemp: { med, count, times[] }
+//   }
+// }
 
 function getUser(chatId) {
   if (!users[chatId]) {
     users[chatId] = {
-      startDate: null,
-      day: 0,
+      startDate: new Date(),
+      day: 1,
       checked: {},
-      meals: null,
-      jobs: [],
+      reminders: [],
       setupStep: null,
+      setupTemp: null,
     };
   }
   return users[chatId];
 }
 
-// ─── Розклад прийому ліків ───
-// Дні 1–5: Золопент окремо за 15 хв до Улькавісу/Тетрамаксу
-// Дні 6–14: Золопент разом з рештою (стандартна схема)
+// ════════════════════════════════════════
+//  СПИСОК ПРЕПАРАТІВ
+// ════════════════════════════════════════
+const MEDS = [
+  'Золопент',
+  'Улькавіс',
+  'Тетрамакс',
+  'Метронідазол',
+  'Ентерол',
+  'Джилла',
+  'Магній',
+  'Ондансетрон',
+  'Мебсин',
+];
 
+// ════════════════════════════════════════
+//  РОЗКЛАД ЛІКІВ (чек-лист)
+// ════════════════════════════════════════
 function getSchedule(day) {
   const isEarly = day <= 5;
-
   return {
     morning: {
       label: '🌅 РАНОК',
       slots: isEarly ? [
-        { id: 'wake', title: 'Одразу після пробудження', meds: ['Золопент — 1 таб'] },
-        { id: 'wait_15', title: '⏳ Зачекай 15 хвилин…', meds: [] },
-        { id: 'before_breakfast', title: 'Через 15 хв (перед сніданком)', meds: ['Улькавіс — 2 таб', 'Тетрамакс — 1 кап'] },
-        { id: 'after_breakfast', title: 'Після сніданку', meds: ['Метронідазол — 2 таб'] },
+        { id: 'wake',            title: 'Одразу після пробудження',       meds: ['Золопент — 1 таб'] },
+        { id: 'wait_15',         title: '⏳ Зачекай 15 хвилин…',          meds: [] },
+        { id: 'before_b',        title: 'Через 15 хв (перед сніданком)',   meds: ['Улькавіс — 2 таб', 'Тетрамакс — 1 кап'] },
+        { id: 'after_b',         title: 'Після сніданку',                  meds: ['Метронідазол — 2 таб'] },
       ] : [
-        { id: 'wake', title: 'Одразу після пробудження', meds: ['Золопент — 1 таб'] },
-        { id: 'before_breakfast', title: 'Через 15–20 хв (перед сніданком)', meds: ['Улькавіс — 2 таб', 'Тетрамакс — 1 кап'] },
-        { id: 'after_breakfast', title: 'Після сніданку', meds: ['Метронідазол — 2 таб'] },
+        { id: 'wake',            title: 'Одразу після пробудження',       meds: ['Золопент — 1 таб'] },
+        { id: 'before_b',        title: 'Через 15–20 хв (перед сніданком)', meds: ['Улькавіс — 2 таб', 'Тетрамакс — 1 кап'] },
+        { id: 'after_b',         title: 'Після сніданку',                  meds: ['Метронідазол — 2 таб'] },
       ],
     },
     day: {
       label: '☀️ ДЕНЬ',
       slots: [
-        { id: 'before_lunch', title: 'За 10–15 хв до обіду', meds: ['Тетрамакс — 1 кап'] },
-        { id: 'after_lunch', title: 'Після обіду', meds: ['Метронідазол — 2 таб'] },
-        { id: 'between_lunch', title: 'Через 1,5–2 год після обіду', meds: ['Ентерол — 1 кап'] },
+        { id: 'before_l',        title: 'За 10–15 хв до обіду',           meds: ['Тетрамакс — 1 кап'] },
+        { id: 'after_l',         title: 'Після обіду',                     meds: ['Метронідазол — 2 таб'] },
+        { id: 'between_l',       title: 'Через 1,5–2 год після обіду',    meds: ['Ентерол — 1 кап'] },
       ],
     },
     evening: {
       label: '🌆 ВЕЧІР',
       slots: isEarly ? [
-        { id: 'before_dinner_30', title: 'За 30 хв до вечері', meds: ['Золопент — 1 таб'] },
-        { id: 'wait_15_eve', title: '⏳ Зачекай 15 хвилин…', meds: [] },
-        { id: 'before_dinner_15', title: 'За 10–15 хв до вечері', meds: ['Улькавіс — 2 таб', 'Тетрамакс — 1 кап'] },
-        { id: 'after_dinner', title: 'Після вечері', meds: ['Метронідазол — 2 таб'] },
+        { id: 'before_d30',      title: 'За 30 хв до вечері',             meds: ['Золопент — 1 таб'] },
+        { id: 'wait_15_eve',     title: '⏳ Зачекай 15 хвилин…',          meds: [] },
+        { id: 'before_d15',      title: 'За 10–15 хв до вечері',          meds: ['Улькавіс — 2 таб', 'Тетрамакс — 1 кап'] },
+        { id: 'after_d',         title: 'Після вечері',                    meds: ['Метронідазол — 2 таб'] },
       ] : [
-        { id: 'before_dinner_30', title: 'За 30 хв до вечері', meds: ['Золопент — 1 таб'] },
-        { id: 'before_dinner_15', title: 'За 10–15 хв до вечері', meds: ['Улькавіс — 2 таб', 'Тетрамакс — 1 кап'] },
-        { id: 'after_dinner', title: 'Після вечері', meds: ['Метронідазол — 2 таб'] },
+        { id: 'before_d30',      title: 'За 30 хв до вечері',             meds: ['Золопент — 1 таб'] },
+        { id: 'before_d15',      title: 'За 10–15 хв до вечері',          meds: ['Улькавіс — 2 таб', 'Тетрамакс — 1 кап'] },
+        { id: 'after_d',         title: 'Після вечері',                    meds: ['Метронідазол — 2 таб'] },
       ],
     },
     night: {
       label: '🌙 НІЧ',
       slots: [
-        { id: 'night_enterol', title: 'Через 2 год після вечері', meds: ['Ентерол — 1 кап'] },
-        { id: 'before_sleep', title: 'Перед сном', meds: ['Тетрамакс — 1 кап', 'Джилла — 10–15 мл', 'Магній — 300 мг'] },
+        { id: 'night_e',         title: 'Через 2 год після вечері',       meds: ['Ентерол — 1 кап'] },
+        { id: 'before_sleep',    title: 'Перед сном',                      meds: ['Тетрамакс — 1 кап', 'Джилла — 10–15 мл', 'Магній — 300 мг'] },
       ],
     },
   };
@@ -76,49 +98,41 @@ function getSchedule(day) {
 
 const PERIOD_ORDER = ['morning', 'day', 'evening', 'night'];
 
-// ─── Парсинг часу "8:30" або "830" або "8.30" ───
+// ════════════════════════════════════════
+//  ДОПОМІЖНІ ФУНКЦІЇ
+// ════════════════════════════════════════
 function parseTime(str) {
-  const clean = str.trim().replace('.', ':').replace('-', ':');
+  const clean = str.trim().replace(/[.\-,]/, ':');
   const match = clean.match(/^(\d{1,2}):?(\d{2})$/);
   if (!match) return null;
   const h = parseInt(match[1]);
   const m = parseInt(match[2]);
-  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  if (h > 23 || m > 59) return null;
   return { h, m };
 }
 
-// ─── Додати хвилини до { h, m } ───
-function addMinutes(time, mins) {
-  const total = time.h * 60 + time.m + mins;
-  return { h: Math.floor(total / 60) % 24, m: total % 60 };
-}
-
-// ─── Розрахунок часів нагадувань на основі часу їжі ───
-function calcReminders(meals) {
-  const b = parseTime(meals.breakfast);
-  const l = parseTime(meals.lunch);
-  const d = parseTime(meals.dinner);
-
-  return {
-    morning: addMinutes(b, -20),   // за 20 хв до сніданку (Золопент)
-    day: addMinutes(l, -15),       // за 15 хв до обіду (Тетрамакс)
-    evening: addMinutes(d, -30),   // за 30 хв до вечері (Золопент)
-    night: addMinutes(d, 120),     // через 2 год після вечері (Ентерол + сон)
-  };
-}
-
-// ─── Форматування часу ───
 function fmtTime(t) {
   return `${String(t.h).padStart(2, '0')}:${String(t.m).padStart(2, '0')}`;
 }
 
-// ─── Чек-лист ───
+function buildDayBar(day) {
+  let bar = '';
+  for (let i = 1; i <= 14; i++) {
+    bar += i < day ? '🟢' : i === day ? '🔵' : '⚪';
+    if (i === 7) bar += '\n';
+  }
+  return bar;
+}
+
+// ════════════════════════════════════════
+//  ЧЕК-ЛИСТ
+// ════════════════════════════════════════
 function buildChecklist(chatId, day, period) {
   const user = getUser(chatId);
   const sched = getSchedule(day);
   const periodData = sched[period];
-
   const isEarly = day <= 5;
+
   let text = `*${periodData.label} — День ${day}/14*`;
   if (isEarly && (period === 'morning' || period === 'evening')) {
     text += ` _(Золопент окремо, дні 1–5)_`;
@@ -128,12 +142,10 @@ function buildChecklist(chatId, day, period) {
   const buttons = [];
 
   periodData.slots.forEach((slot, slotIdx) => {
-    // Слот-розділювач без ліків — просто показуємо заголовок
     if (slot.meds.length === 0) {
       text += `${slot.title}\n\n`;
       return;
     }
-
     text += `*${slot.title}*\n`;
     slot.meds.forEach((med, medIdx) => {
       const key = `${day}_${period}_${slotIdx}_${medIdx}`;
@@ -153,7 +165,6 @@ function buildChecklist(chatId, day, period) {
   return { text, buttons };
 }
 
-// ─── Прогрес ───
 function dayProgress(chatId, day) {
   const user = getUser(chatId);
   const sched = getSchedule(day);
@@ -171,161 +182,143 @@ function dayProgress(chatId, day) {
   return { done, total, pct, bar };
 }
 
-function buildDayBar(day) {
-  let bar = '';
-  for (let i = 1; i <= 14; i++) {
-    bar += i < day ? '🟢' : i === day ? '🔵' : '⚪';
-    if (i === 7) bar += '\n';
-  }
-  return bar;
-}
+// ════════════════════════════════════════
+//  СИСТЕМА НАГАДУВАНЬ
+// ════════════════════════════════════════
 
-// ─── Скасувати старі jobs ───
-function cancelJobs(chatId) {
-  const user = getUser(chatId);
-  if (user.jobs && user.jobs.length) {
-    user.jobs.forEach(j => j.cancel());
-    user.jobs = [];
-  }
-}
-
-// ─── Запустити нагадування для користувача ───
-function scheduleReminders(chatId) {
-  cancelJobs(chatId);
-  const user = getUser(chatId);
-  const times = calcReminders(user.meals);
-
-  const entries = [
-    { time: times.morning, period: 'morning' },
-    { time: times.day,     period: 'day' },
-    { time: times.evening, period: 'evening' },
-    { time: times.night,   period: 'night' },
-  ];
-
-  entries.forEach(({ time, period }) => {
-    const job = schedule.scheduleJob(
-      { hour: time.h, minute: time.m },
-      async () => {
-        if (!user.startDate || user.day > 14) return;
-
-        const diffDays = Math.floor((Date.now() - user.startDate) / 86400000);
-        user.day = Math.min(diffDays + 1, 14);
-
-        const { text, buttons } = buildChecklist(chatId, user.day, period);
-        try {
-          await bot.telegram.sendMessage(
-            chatId,
-            `⏰ *Час приймати ліки!*\n\n${text}`,
-            { parse_mode: 'Markdown', reply_markup: Markup.inlineKeyboard(buttons).reply_markup }
-          );
-        } catch (e) {
-          console.error(`Reminder error ${chatId}:`, e.message);
+// Створити одне нагадування і повернути job
+function createReminderJob(chatId, remId, med, h, m) {
+  return schedule.scheduleJob({ hour: h, minute: m }, async () => {
+    try {
+      await bot.telegram.sendMessage(
+        chatId,
+        `💊 *Час прийняти ${med}!*`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('✅ Прийнято', `taken:${remId}`)],
+          ]).reply_markup,
         }
-      }
-    );
-    user.jobs.push(job);
+      );
+    } catch (e) {
+      console.error(`Reminder job error [${chatId}]:`, e.message);
+    }
   });
 }
 
+// Зареєструвати нагадування у стані користувача
+function addReminder(chatId, med, h, m) {
+  const user = getUser(chatId);
+  const remId = `${med}_${h}_${m}_${Date.now()}`;
+  const job = createReminderJob(chatId, remId, med, h, m);
+  user.reminders.push({ id: remId, med, h, m, job });
+  return remId;
+}
+
+// Видалити одне нагадування
+function removeReminder(chatId, remId) {
+  const user = getUser(chatId);
+  const idx = user.reminders.findIndex(r => r.id === remId);
+  if (idx === -1) return false;
+  user.reminders[idx].job.cancel();
+  user.reminders.splice(idx, 1);
+  return true;
+}
+
+// Список нагадувань для показу
+function buildRemindersList(chatId) {
+  const user = getUser(chatId);
+  if (!user.reminders.length) {
+    return { text: '🔔 *Нагадування*\n\nУ тебе ще немає нагадувань.', buttons: [] };
+  }
+
+  // Групуємо по препарату
+  const grouped = {};
+  user.reminders.forEach(r => {
+    if (!grouped[r.med]) grouped[r.med] = [];
+    grouped[r.med].push(r);
+  });
+
+  let text = '🔔 *Активні нагадування:*\n\n';
+  const buttons = [];
+
+  Object.entries(grouped).forEach(([med, rems]) => {
+    const times = rems.map(r => fmtTime({ h: r.h, m: r.m })).join(', ');
+    text += `💊 *${med}* — ${times}\n`;
+    rems.forEach(r => {
+      buttons.push([
+        Markup.button.callback(
+          `🗑 ${med} о ${fmtTime({ h: r.h, m: r.m })}`,
+          `del_rem:${r.id}`
+        ),
+      ]);
+    });
+  });
+
+  text += '\nНатисни на нагадування щоб видалити:';
+  return { text, buttons };
+}
+
 // ════════════════════════════════════════
-//  КОМАНДИ ТА ХЕНДЛЕРИ
+//  МЕНЮ
+// ════════════════════════════════════════
+const MAIN_MENU = Markup.keyboard([
+  ['🌅 Ранок', '☀️ День'],
+  ['🌆 Вечір', '🌙 Ніч'],
+  ['🔔 Нагадування', '📊 Прогрес'],
+  ['📅 Статус курсу'],
+]).resize();
+
+const PERIOD_MAP = {
+  '🌅 Ранок': 'morning',
+  '☀️ День': 'day',
+  '🌆 Вечір': 'evening',
+  '🌙 Ніч': 'night',
+};
+
+const MENU_BUTTONS = [
+  '🌅 Ранок', '☀️ День', '🌆 Вечір', '🌙 Ніч',
+  '🔔 Нагадування', '📊 Прогрес', '📅 Статус курсу',
+];
+
+// ════════════════════════════════════════
+//  HANDLERS
 // ════════════════════════════════════════
 
 bot.start(async (ctx) => {
   const chatId = ctx.chat.id;
   const user = getUser(chatId);
-  user.setupStep = 'breakfast';
-  user.meals = {};
+  user.startDate = new Date();
+  user.day = 1;
+  user.checked = {};
+  user.setupStep = null;
+  user.setupTemp = null;
 
   await ctx.replyWithMarkdown(
     `👋 *Привіт! Я твій помічник з прийому ліків.*\n\n` +
-    `📅 Курс розрахований на *14 днів*\n\n` +
-    `Спочатку налаштуємо розклад під твій режим харчування, щоб нагадування приходили у зручний час.\n\n` +
-    `🍳 *О котрій годині ти зазвичай снідаєш?*\n` +
-    `_(Напиши у форматі 8:30 або 9:00)_`
+    `📅 Курс на *14 днів* вже розпочато — *День 1*\n\n` +
+    `*Що я вмію:*\n` +
+    `🌅☀️🌆🌙 — Чек-лист ліків по часу дня\n` +
+    `🔔 — Власні нагадування для будь-якого препарату\n` +
+    `📊 — Прогрес за поточний день\n\n` +
+    `Використовуй кнопки нижче 👇`,
+    MAIN_MENU
   );
 });
 
-// ─── Діалог налаштування + обробка всіх текстових повідомлень ───
-bot.on('text', async (ctx) => {
-  const chatId = ctx.chat.id;
-  const user = getUser(chatId);
-  const text = ctx.message.text;
-
-  // Кнопки меню — пропускаємо, обробляються через hears нижче
-  const menuButtons = ['🌅 Ранок', '☀️ День', '🌆 Вечір', '🌙 Ніч', '📊 Прогрес', '📅 Статус курсу', '⚙️ Змінити розклад'];
-  if (menuButtons.includes(text)) return;
-
-  if (!user.setupStep) return;
-
-  const time = parseTime(text);
-  if (!time) {
-    return ctx.reply('❌ Не розумію формат. Спробуй ще раз, наприклад: 8:30 або 13:00');
-  }
-
-  if (user.setupStep === 'breakfast') {
-    user.meals.breakfast = text;
-    user.setupStep = 'lunch';
-    return ctx.replyWithMarkdown(
-      `✅ Сніданок: *${fmtTime(time)}*\n\n🍽 *О котрій обідаєш?*\n_(наприклад: 13:00)_`
-    );
-  }
-
-  if (user.setupStep === 'lunch') {
-    user.meals.lunch = text;
-    user.setupStep = 'dinner';
-    return ctx.replyWithMarkdown(
-      `✅ Обід: *${fmtTime(time)}*\n\n🍲 *О котрій вечеряєш?*\n_(наприклад: 19:00)_`
-    );
-  }
-
-  if (user.setupStep === 'dinner') {
-    user.meals.dinner = text;
-    user.setupStep = null;
-
-    user.startDate = new Date();
-    user.day = 1;
-    user.checked = {};
-
-    const times = calcReminders(user.meals);
-    scheduleReminders(chatId);
-
-    await ctx.replyWithMarkdown(
-      `✅ Вечеря: *${fmtTime(time)}*\n\n` +
-      `🎉 *Відмінно! Розклад налаштовано.*\n\n` +
-      `⏰ *Нагадування приходитимуть:*\n` +
-      `🌅 Ранок — *${fmtTime(times.morning)}* _(за 20 хв до сніданку)_\n` +
-      `☀️ День — *${fmtTime(times.day)}* _(за 15 хв до обіду)_\n` +
-      `🌆 Вечір — *${fmtTime(times.evening)}* _(за 30 хв до вечері)_\n` +
-      `🌙 Ніч — *${fmtTime(times.night)}* _(через 2 год після вечері)_\n\n` +
-      `📅 Курс почався сьогодні — *День 1 з 14* 💪\n\n` +
-      `Використовуй кнопки нижче 👇`,
-      Markup.keyboard([
-        ['🌅 Ранок', '☀️ День'],
-        ['🌆 Вечір', '🌙 Ніч'],
-        ['📊 Прогрес', '📅 Статус курсу'],
-        ['⚙️ Змінити розклад'],
-      ]).resize()
-    );
-  }
-});
-
-// ─── Кнопки меню ───
-const PERIOD_MAP = { '🌅 Ранок': 'morning', '☀️ День': 'day', '🌆 Вечір': 'evening', '🌙 Ніч': 'night' };
-
+// ── Чек-лист кнопки ──
 bot.hears(['🌅 Ранок', '☀️ День', '🌆 Вечір', '🌙 Ніч'], async (ctx) => {
   const chatId = ctx.chat.id;
   const user = getUser(chatId);
-  if (!user.startDate) return ctx.reply('Спочатку натисни /start та налаштуй розклад.');
   const period = PERIOD_MAP[ctx.message.text];
   const { text, buttons } = buildChecklist(chatId, user.day, period);
   await ctx.replyWithMarkdown(text, Markup.inlineKeyboard(buttons));
 });
 
+// ── Прогрес ──
 bot.hears('📊 Прогрес', async (ctx) => {
   const chatId = ctx.chat.id;
   const user = getUser(chatId);
-  if (!user.startDate) return ctx.reply('Спочатку натисни /start');
   const { done, total, pct, bar } = dayProgress(chatId, user.day);
   await ctx.replyWithMarkdown(
     `📊 *Прогрес — День ${user.day}/14*\n\n` +
@@ -335,36 +328,123 @@ bot.hears('📊 Прогрес', async (ctx) => {
   );
 });
 
+// ── Статус курсу ──
 bot.hears('📅 Статус курсу', async (ctx) => {
   const chatId = ctx.chat.id;
   const user = getUser(chatId);
-  if (!user.startDate) return ctx.reply('Спочатку натисни /start');
-  const times = calcReminders(user.meals);
   await ctx.replyWithMarkdown(
     `📅 *Статус курсу*\n\n` +
     `📍 Поточний день: *${user.day} з 14*\n` +
     `⏳ Залишилось: *${14 - user.day + 1} днів*\n\n` +
-    buildDayBar(user.day) + '\n\n' +
-    `⏰ *Твій розклад нагадувань:*\n` +
-    `🌅 Ранок — ${fmtTime(times.morning)}\n` +
-    `☀️ День — ${fmtTime(times.day)}\n` +
-    `🌆 Вечір — ${fmtTime(times.evening)}\n` +
-    `🌙 Ніч — ${fmtTime(times.night)}`
+    buildDayBar(user.day)
   );
 });
 
-bot.hears('⚙️ Змінити розклад', async (ctx) => {
+// ── Нагадування — головне меню ──
+bot.hears('🔔 Нагадування', async (ctx) => {
+  const chatId = ctx.chat.id;
+  const { text, buttons } = buildRemindersList(chatId);
+  buttons.push([Markup.button.callback('➕ Додати нагадування', 'rem_add')]);
+  await ctx.replyWithMarkdown(text, Markup.inlineKeyboard(buttons));
+});
+
+// ── Callback: додати нагадування → вибір препарату ──
+bot.action('rem_add', async (ctx) => {
   const chatId = ctx.chat.id;
   const user = getUser(chatId);
-  user.setupStep = 'breakfast';
-  user.meals = {};
-  await ctx.replyWithMarkdown(
-    `⚙️ *Змінюємо розклад*\n\n` +
-    `🍳 *О котрій снідаєш?*\n_(наприклад: 8:30)_`
+  user.setupStep = 'pick_med';
+  user.setupTemp = { med: null, count: 0, times: [] };
+
+  // Кнопки з препаратами (по 3 в ряд)
+  const medButtons = [];
+  for (let i = 0; i < MEDS.length; i += 3) {
+    medButtons.push(
+      MEDS.slice(i, i + 3).map(m => Markup.button.callback(m, `rem_med:${m}`))
+    );
+  }
+  medButtons.push([Markup.button.callback('❌ Скасувати', 'rem_cancel')]);
+
+  await ctx.editMessageText(
+    '💊 *Оберіть препарат:*',
+    { parse_mode: 'Markdown', reply_markup: Markup.inlineKeyboard(medButtons).reply_markup }
   );
 });
 
-// ─── Callback: відмітити ліки ───
+// ── Callback: вибрано препарат → вибір кількості ──
+bot.action(/^rem_med:(.+)$/, async (ctx) => {
+  const chatId = ctx.chat.id;
+  const user = getUser(chatId);
+  const med = ctx.match[1];
+  user.setupTemp.med = med;
+  user.setupStep = 'pick_count';
+
+  const countButtons = [
+    [1, 2, 3].map(n => Markup.button.callback(`${n}x`, `rem_count:${n}`)),
+    [4, 5].map(n => Markup.button.callback(`${n}x`, `rem_count:${n}`)),
+    [Markup.button.callback('❌ Скасувати', 'rem_cancel')],
+  ];
+
+  await ctx.editMessageText(
+    `💊 *${med}*\n\nСкільки разів на день потрібне нагадування?`,
+    { parse_mode: 'Markdown', reply_markup: Markup.inlineKeyboard(countButtons).reply_markup }
+  );
+});
+
+// ── Callback: вибрано кількість → введення першого часу ──
+bot.action(/^rem_count:(\d+)$/, async (ctx) => {
+  const chatId = ctx.chat.id;
+  const user = getUser(chatId);
+  const count = parseInt(ctx.match[1]);
+  user.setupTemp.count = count;
+  user.setupTemp.times = [];
+  user.setupStep = 'pick_time_0';
+
+  await ctx.editMessageText(
+    `💊 *${user.setupTemp.med}* — ${count}x на день\n\n` +
+    `⏰ Введи час для нагадування 1 з ${count}:\n_(наприклад: 8:00 або 20:30)_`,
+    { parse_mode: 'Markdown' }
+  );
+});
+
+// ── Callback: видалити нагадування ──
+bot.action(/^del_rem:(.+)$/, async (ctx) => {
+  const chatId = ctx.chat.id;
+  const remId = ctx.match[1];
+  const removed = removeReminder(chatId, remId);
+
+  await ctx.answerCbQuery(removed ? '🗑 Нагадування видалено' : '❌ Не знайдено');
+
+  // Оновити список
+  const { text, buttons } = buildRemindersList(chatId);
+  buttons.push([Markup.button.callback('➕ Додати нагадування', 'rem_add')]);
+  try {
+    await ctx.editMessageText(text, {
+      parse_mode: 'Markdown',
+      reply_markup: Markup.inlineKeyboard(buttons).reply_markup,
+    });
+  } catch (e) {}
+});
+
+// ── Callback: "Прийнято" у нагадуванні ──
+bot.action(/^taken:(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery('✅ Відмічено!');
+  try {
+    await ctx.editMessageText(
+      ctx.callbackQuery.message.text + '\n\n✅ _Прийнято_',
+      { parse_mode: 'Markdown' }
+    );
+  } catch (e) {}
+});
+
+// ── Callback: скасувати налаштування ──
+bot.action('rem_cancel', async (ctx) => {
+  const user = getUser(ctx.chat.id);
+  user.setupStep = null;
+  user.setupTemp = null;
+  await ctx.editMessageText('❌ Скасовано.');
+});
+
+// ── Callback: відмітити ліки в чек-листі ──
 bot.action(/check:(\d+):(\w+):(\d+):(\d+)/, async (ctx) => {
   const [, day, period, slotIdx, medIdx] = ctx.match;
   const chatId = ctx.chat.id;
@@ -382,7 +462,52 @@ bot.action(/check:(\d+):(\w+):(\d+):(\d+)/, async (ctx) => {
   await ctx.answerCbQuery(user.checked[key] ? '✅ Відмічено!' : '↩️ Знято відмітку');
 });
 
-// ─── Запуск ───
+// ── Введення часу (текстові повідомлення) ──
+bot.on('text', async (ctx) => {
+  const chatId = ctx.chat.id;
+  const user = getUser(chatId);
+  const text = ctx.message.text;
+
+  if (MENU_BUTTONS.includes(text)) return;
+  if (!user.setupStep || !user.setupStep.startsWith('pick_time_')) return;
+
+  const idx = parseInt(user.setupStep.split('_').pop());
+  const time = parseTime(text);
+
+  if (!time) {
+    return ctx.reply('❌ Не розумію формат. Спробуй: 8:00 або 20:30');
+  }
+
+  user.setupTemp.times.push(time);
+
+  if (user.setupTemp.times.length < user.setupTemp.count) {
+    const next = user.setupTemp.times.length;
+    user.setupStep = `pick_time_${next}`;
+    return ctx.replyWithMarkdown(
+      `✅ *${fmtTime(time)}* збережено.\n\n` +
+      `⏰ Введи час для нагадування ${next + 1} з ${user.setupTemp.count}:`
+    );
+  }
+
+  // Всі часи зібрані — створюємо нагадування
+  const { med, times } = user.setupTemp;
+  times.forEach(t => addReminder(chatId, med, t.h, t.m));
+
+  const timesList = times.map(t => `⏰ ${fmtTime(t)}`).join('\n');
+  user.setupStep = null;
+  user.setupTemp = null;
+
+  await ctx.replyWithMarkdown(
+    `✅ *Нагадування встановлено!*\n\n` +
+    `💊 *${med}*\n${timesList}\n\n` +
+    `Щодня о цьому часі я нагадаю тобі прийняти ліки.`,
+    MAIN_MENU
+  );
+});
+
+// ════════════════════════════════════════
+//  ЗАПУСК
+// ════════════════════════════════════════
 bot.launch().then(() => console.log('✅ Бот запущено!'));
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
