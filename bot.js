@@ -23,39 +23,56 @@ function getUser(chatId) {
 }
 
 // ─── Розклад прийому ліків ───
-const SCHEDULE = {
-  morning: {
-    label: '🌅 РАНОК',
-    slots: [
-      { id: 'wake', title: 'Одразу після пробудження', meds: ['Золопент — 1 таб'] },
-      { id: 'before_breakfast', title: 'Через 15–20 хв (перед сніданком)', meds: ['Улькавіс — 2 таб', 'Тетрамакс — 1 кап'] },
-      { id: 'after_breakfast', title: 'Після сніданку', meds: ['Метронідазол — 2 таб'] },
-    ],
-  },
-  day: {
-    label: '☀️ ДЕНЬ',
-    slots: [
-      { id: 'before_lunch', title: 'За 10–15 хв до обіду', meds: ['Тетрамакс — 1 кап'] },
-      { id: 'after_lunch', title: 'Після обіду', meds: ['Метронідазол — 2 таб'] },
-      { id: 'between_lunch', title: 'Через 1,5–2 год після обіду', meds: ['Ентерол — 1 кап'] },
-    ],
-  },
-  evening: {
-    label: '🌆 ВЕЧІР',
-    slots: [
-      { id: 'before_dinner_30', title: 'За 30 хв до вечері', meds: ['Золопент — 1 таб'] },
-      { id: 'before_dinner_15', title: 'За 10–15 хв до вечері', meds: ['Улькавіс — 2 таб', 'Тетрамакс — 1 кап'] },
-      { id: 'after_dinner', title: 'Після вечері', meds: ['Метронідазол — 2 таб'] },
-    ],
-  },
-  night: {
-    label: '🌙 НІЧ',
-    slots: [
-      { id: 'night_enterol', title: 'Через 2 год після вечері', meds: ['Ентерол — 1 кап'] },
-      { id: 'before_sleep', title: 'Перед сном', meds: ['Тетрамакс — 1 кап', 'Джилла — 10–15 мл', 'Магній — 300 мг'] },
-    ],
-  },
-};
+// Дні 1–5: Золопент окремо за 15 хв до Улькавісу/Тетрамаксу
+// Дні 6–14: Золопент разом з рештою (стандартна схема)
+
+function getSchedule(day) {
+  const isEarly = day <= 5;
+
+  return {
+    morning: {
+      label: '🌅 РАНОК',
+      slots: isEarly ? [
+        { id: 'wake', title: 'Одразу після пробудження', meds: ['Золопент — 1 таб'] },
+        { id: 'wait_15', title: '⏳ Зачекай 15 хвилин…', meds: [] },
+        { id: 'before_breakfast', title: 'Через 15 хв (перед сніданком)', meds: ['Улькавіс — 2 таб', 'Тетрамакс — 1 кап'] },
+        { id: 'after_breakfast', title: 'Після сніданку', meds: ['Метронідазол — 2 таб'] },
+      ] : [
+        { id: 'wake', title: 'Одразу після пробудження', meds: ['Золопент — 1 таб'] },
+        { id: 'before_breakfast', title: 'Через 15–20 хв (перед сніданком)', meds: ['Улькавіс — 2 таб', 'Тетрамакс — 1 кап'] },
+        { id: 'after_breakfast', title: 'Після сніданку', meds: ['Метронідазол — 2 таб'] },
+      ],
+    },
+    day: {
+      label: '☀️ ДЕНЬ',
+      slots: [
+        { id: 'before_lunch', title: 'За 10–15 хв до обіду', meds: ['Тетрамакс — 1 кап'] },
+        { id: 'after_lunch', title: 'Після обіду', meds: ['Метронідазол — 2 таб'] },
+        { id: 'between_lunch', title: 'Через 1,5–2 год після обіду', meds: ['Ентерол — 1 кап'] },
+      ],
+    },
+    evening: {
+      label: '🌆 ВЕЧІР',
+      slots: isEarly ? [
+        { id: 'before_dinner_30', title: 'За 30 хв до вечері', meds: ['Золопент — 1 таб'] },
+        { id: 'wait_15_eve', title: '⏳ Зачекай 15 хвилин…', meds: [] },
+        { id: 'before_dinner_15', title: 'За 10–15 хв до вечері', meds: ['Улькавіс — 2 таб', 'Тетрамакс — 1 кап'] },
+        { id: 'after_dinner', title: 'Після вечері', meds: ['Метронідазол — 2 таб'] },
+      ] : [
+        { id: 'before_dinner_30', title: 'За 30 хв до вечері', meds: ['Золопент — 1 таб'] },
+        { id: 'before_dinner_15', title: 'За 10–15 хв до вечері', meds: ['Улькавіс — 2 таб', 'Тетрамакс — 1 кап'] },
+        { id: 'after_dinner', title: 'Після вечері', meds: ['Метронідазол — 2 таб'] },
+      ],
+    },
+    night: {
+      label: '🌙 НІЧ',
+      slots: [
+        { id: 'night_enterol', title: 'Через 2 год після вечері', meds: ['Ентерол — 1 кап'] },
+        { id: 'before_sleep', title: 'Перед сном', meds: ['Тетрамакс — 1 кап', 'Джилла — 10–15 мл', 'Магній — 300 мг'] },
+      ],
+    },
+  };
+}
 
 const PERIOD_ORDER = ['morning', 'day', 'evening', 'night'];
 
@@ -98,11 +115,25 @@ function fmtTime(t) {
 // ─── Чек-лист ───
 function buildChecklist(chatId, day, period) {
   const user = getUser(chatId);
-  const periodData = SCHEDULE[period];
-  let text = `*${periodData.label} — День ${day}/14*\n\n`;
+  const sched = getSchedule(day);
+  const periodData = sched[period];
+
+  const isEarly = day <= 5;
+  let text = `*${periodData.label} — День ${day}/14*`;
+  if (isEarly && (period === 'morning' || period === 'evening')) {
+    text += ` _(Золопент окремо, дні 1–5)_`;
+  }
+  text += '\n\n';
+
   const buttons = [];
 
   periodData.slots.forEach((slot, slotIdx) => {
+    // Слот-розділювач без ліків — просто показуємо заголовок
+    if (slot.meds.length === 0) {
+      text += `${slot.title}\n\n`;
+      return;
+    }
+
     text += `*${slot.title}*\n`;
     slot.meds.forEach((med, medIdx) => {
       const key = `${day}_${period}_${slotIdx}_${medIdx}`;
@@ -125,9 +156,10 @@ function buildChecklist(chatId, day, period) {
 // ─── Прогрес ───
 function dayProgress(chatId, day) {
   const user = getUser(chatId);
+  const sched = getSchedule(day);
   let total = 0, done = 0;
   PERIOD_ORDER.forEach((period) => {
-    SCHEDULE[period].slots.forEach((slot, slotIdx) => {
+    sched[period].slots.forEach((slot, slotIdx) => {
       slot.meds.forEach((_, medIdx) => {
         total++;
         if (user.checked[`${day}_${period}_${slotIdx}_${medIdx}`]) done++;
