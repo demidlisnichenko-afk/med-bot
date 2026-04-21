@@ -188,7 +188,7 @@ function dayProgress(chatId, day) {
 
 // Створити одне нагадування і повернути job
 function createReminderJob(chatId, remId, med, h, m) {
-  return schedule.scheduleJob({ hour: h, minute: m }, async () => {
+  return schedule.scheduleJob({ hour: h, minute: m, tz: 'Europe/Kiev' }, async () => {
     try {
       await bot.telegram.sendMessage(
         chatId,
